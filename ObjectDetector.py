@@ -21,15 +21,20 @@ import torch
 
 ## Class to setup detectron
 class DetectronDetector:
-    dataDir=Path('/data/trainval')
-    cfg = get_cfg()
-    register_coco_instances('task_train',{}, 'data/trainval/annotations/train.json', 'data/trainval/images')
-    register_coco_instances('task_val',{},'data/trainval/annotations/test.json', 'data/trainval/images')
-    metadata = MetadataCatalog.get('task_train')
-    train_ds = DatasetCatalog.get('task_train')
-    
-
-    def train(self):
+    def __init__(self,*args,**kwargs):
+        self.dataDir = None
+        self.metadata = None
+        self.train_ds = None
+        self.cfg = None
+    @classmethod
+    def setup(cls,datadir,trainannotations,testannotations,imgpath):
+      register_coco_instances('task_train',{}, trainannotations, imgpath)
+      register_coco_instances('task_val',{},testannotations, imgpath)
+      
+      detectronobject =  cls(dataDir = Path(datadir), metadata =MetadataCatalog.get('task_train'),train_ds = DatasetCatalog.get('task_train'),cfg = get_cfg())
+      return detectronobject
+    def train(self,wanna_save =True):
+        self.cfg = get_cfg()
         self.cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")) #Get the basic model configuration from the model zoo 
         self.cfg.DATASETS.TRAIN = ("task_train",)
         self.cfg.DATASETS.TEST = ()
