@@ -16,9 +16,7 @@ def main(*args, **kwargs):
     ## split train and val
     splitdata(filepath = r"data/trainval/annotations/bbox-annotations.json",is_annotated = True,split_ratio = 0.8)
     detector = DetectronDetector().setup(datadir = '/data/trainval',trainannotations = 'data/trainval/annotations/train.json',testannotations =  'data/trainval/annotations/test.json', imgpath = 'data/trainval/images' )
-    if isEmpty('models'):
-        detector.train()
-    else:
-        detector.evaluate()
+    isEmpty('models') # just to save time of checking and creating models dir
+    detector.run()
 if __name__ == "__main__":
     main()

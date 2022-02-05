@@ -18,7 +18,18 @@ from detectron2.modeling import build_model
 
 from detectron2.checkpoint import DetectionCheckpointer
 import torch
+from detectron2.evaluation import COCOEvaluator, inference_on_dataset
+from detectron2.data import build_detection_test_loader
 
+## Helper function to seed. Intent is to motivate reproducibility. Doesnt work as expected for training module
+# FIXME
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
 ## Class to setup detectron
 class DetectronDetector:
     def __init__(self,*args,**kwargs):
@@ -28,27 +39,26 @@ class DetectronDetector:
         self.cfg = None
     @classmethod
     def setup(cls,datadir,trainannotations,testannotations,imgpath):
-      register_coco_instances('task_train',{}, trainannotations, imgpath)
-      register_coco_instances('task_val',{},testannotations, imgpath)
-      
-      detectronobject =  cls(dataDir = Path(datadir), metadata =MetadataCatalog.get('task_train'),train_ds = DatasetCatalog.get('task_train'),cfg = get_cfg())
-      return detectronobject
-    def train(self,wanna_save =True):
+        register_coco_instances('task_train',{}, trainannotations, imgpath)
+        register_coco_instances('task_val',{},testannotations, imgpath)
+        
+        detectronobject =  cls(dataDir = Path(datadir), metadata =MetadataCatalog.get('task_train'),train_ds = DatasetCatalog.get('task_train'),cfg = get_cfg())
+        return detectronobject
+    def run(self,wanna_save =True):
         self.cfg = get_cfg()
         self.cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")) #Get the basic model configuration from the model zoo 
         self.cfg.DATASETS.TRAIN = ("task_train",)
         self.cfg.DATASETS.TEST = ()
-        # self.cfg.DATASETS.TEST = ("task_val",)
         # Number of data loading threads
         self.cfg.DATALOADER.NUM_WORKERS = 2
         self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")  # Let training initialize from model zoo
         # Number of images per batch across all machines.
         self.cfg.SOLVER.IMS_PER_BATCH = 2
-        self.cfg.SOLVER.BASE_LR = 0.000525  # pick a good LearningRate
-        self.cfg.SOLVER.MAX_ITER = 5000  #No. of iterations   
-        self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256  
+        self.cfg.SOLVER.BASE_LR = 0.00525  # pick a good LearningRate
+        self.cfg.SOLVER.MAX_ITER = 500  #No. of iterations   
+        self.cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128  
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2 # No. of classes = [PERSON, CAR]
-        self.cfg.TEST.EVAL_PERIOD = 500 # No. of iterations after which the Validation Set is evaluated. 
+        self.cfg.TEST.EVAL_PERIOD = 100 # No. of iterations after which the Validation Set is evaluated. 
         os.makedirs(self.cfg.OUTPUT_DIR, exist_ok=True)
         trainer = DefaultTrainer(self.cfg) 
         trainer.resume_or_load(resume=False)
@@ -56,40 +66,39 @@ class DetectronDetector:
         model = build_model(self.cfg)  # returns a torch.nn.Module
         if wanna_save:
             checkpointer = DetectionCheckpointer(model, save_dir="output")
-            checkpointer.save("model_5000")  # save to output/model_999.pth
-            torch.save(model.state_dict(), 'checkpoint.pth')
-
-    def predict_small_train_sample(self):
-        self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR, "model_final.pth")  # path to the model we just trained
-        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5   # set a custom testing threshold
-        predictor = DefaultPredictor(self.cfg)
-        dataset_dicts = DatasetCatalog.get('task_val')
-        outs = []
-        for d in random.sample(dataset_dicts, 3):    
-            im = cv2.imread(d["file_name"])
-            outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
-            v = Visualizer(im[:, :, ::-1],
-                        metadata = MetadataCatalog.get('task_train'), 
-                            
-                        instance_mode=ColorMode.IMAGE_BW   # remove the colors of unsegmented pixels. This option is only available for segmentation models
-            )
-            out_pred = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-            visualizer = Visualizer(im[:, :, ::-1], metadata=MetadataCatalog.get('task_train'))
-            out_target = visualizer.draw_dataset_dict(d)
-            outs.append(out_pred)
-            outs.append(out_target)
-        _,axs = plt.subplots(len(outs)//2,2,figsize=(40,45))
-        for ax, out in zip(axs.reshape(-1), outs):
-            ax.imshow(out.get_image())
-
-    def evaluate():
-        #import the COCO Evaluator to use the COCO Metrics
-        from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-        from detectron2.data import build_detection_test_loader
-
+            checkpointer.save("model_5000")  # save to output/model_5000.pth
+            torch.save(model.state_dict(), os.path.join('output','checkpoint.pth')) ## just to see if torch.save and checkpointer are generating same value
+        
+        ## predictions
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
+        predictor = DefaultPredictor(cfg)
         #Call the COCO Evaluator function and pass the Validation Dataset
-        evaluator = COCOEvaluator("task_val", self.cfg, False, output_dir="/output/")
-        val_loader = build_detection_test_loader(self.cfg, "task_val")
+        evaluator = COCOEvaluator("task_val", cfg, False, output_dir="/output/",tasks=("bbox",))
+        val_loader = build_detection_test_loader(cfg, "task_val")
 
         #Use the created predicted model in the previous step
         inference_on_dataset(predictor.model, val_loader, evaluator)
+    # Will modify it in future for side to side comparison of train dataset vs predicted on train data
+    # def predict_small_train_sample(self):
+    #     self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR, "model_final.pth")  # path to the model we just trained
+    #     self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5   # set a custom testing threshold
+    #     predictor = DefaultPredictor(self.cfg)
+    #     dataset_dicts = DatasetCatalog.get('task_val')
+    #     outs = []
+    #     for d in random.sample(dataset_dicts, 3):    
+    #         im = cv2.imread(d["file_name"])
+    #         outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
+    #         v = Visualizer(im[:, :, ::-1],
+    #                     metadata = MetadataCatalog.get('task_train'), 
+                            
+    #                     instance_mode=ColorMode.IMAGE_BW   # remove the colors of unsegmented pixels. This option is only available for segmentation models
+    #         )
+    #         out_pred = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+    #         visualizer = Visualizer(im[:, :, ::-1], metadata=MetadataCatalog.get('task_train'))
+    #         out_target = visualizer.draw_dataset_dict(d)
+    #         outs.append(out_pred)
+    #         outs.append(out_target)
+    #     _,axs = plt.subplots(len(outs)//2,2,figsize=(40,45))
+    #     for ax, out in zip(axs.reshape(-1), outs):
+    #         ax.imshow(out.get_image())
