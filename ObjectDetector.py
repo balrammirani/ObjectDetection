@@ -119,16 +119,15 @@ class DetectronDetector:
         #     torch.save(model.state_dict(), os.path.join('output','checkpoint.pth')) ## just to see if torch.save and checkpointer are generating same value
         self.evaluate()
 
-    def evaluate():        
+    def evaluate(self):        
         ## predictions
         self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR,"final_model.pth")
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
         self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
         predictor = DefaultPredictor(self.cfg)
         #Call the COCO Evaluator function and pass the Validation Dataset
-        evaluator = COCOEvaluator("task_val", self.cfg, False, output_dir="/output/",tasks=("bbox",))
+        evaluator = COCOEvaluator("task_val", cfg, False, output_dir="/output/")
         val_loader = build_detection_test_loader(self.cfg, "task_val")
-
 
         #Use the created predicted model in the previous step
         inference_on_dataset(predictor.model, val_loader, evaluator)
