@@ -1,6 +1,9 @@
 import os
 import wget
 import tarfile
+
+def isPresent(path):
+  return os.path.isfile(path)
 # Function to Check if the path specified
 # specified is a valid directory
 def isEmpty(path):
@@ -28,3 +31,13 @@ def setupdata(dataset_config):
 
     else:
         print('data already present... no need to download')
+
+## Helper function to seed. Intent is to motivate reproducibility. Doesnt work as expected for training module
+# FIXME
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True

@@ -20,18 +20,13 @@ from detectron2.checkpoint import DetectionCheckpointer
 import torch
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
-from tqdm.notebook  import tqdm
+from tqdm  import tqdm
+from utils import seed_everything
 
-## Helper function to seed. Intent is to motivate reproducibility. Doesnt work as expected for training module
-# FIXME
-def seed_everything(seed):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
 
+# Evaluation Metrics HElper.
+# Will move it to helper class in future release
+#FIXME
 # Taken from https://www.kaggle.com/theoviel/competition-metric-map-iou
 def precision_at(threshold, iou):
     matches = iou > threshold
@@ -83,33 +78,31 @@ class DetectronDetector:
         self.dataDir = None
         self.metadata = None
         self.train_ds = None
-        self.cfg = None
     @classmethod
     def setup(cls,datadir,trainannotations,testannotations,imgpath):
         register_coco_instances('task_train',{}, trainannotations, imgpath)
         register_coco_instances('task_val',{},testannotations, imgpath)
         
-        cfg = get_cfg()
-        cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")) #Get the basic model configuration from the model zoo 
-        cfg.DATASETS.TRAIN = ("task_train",)
-        cfg.DATASETS.TEST = ()
-        # Number of data loading threads
-        cfg.DATALOADER.NUM_WORKERS = 2
-        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")  # Let training initialize from model zoo
-        # Number of images per batch across all machines.
-        cfg.SOLVER.IMS_PER_BATCH = 2
-        cfg.SOLVER.BASE_LR = 0.00525  # pick a good LearningRate
-        cfg.SOLVER.MAX_ITER = 500  #No. of iterations   
-        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128  
-        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2 # No. of classes = [PERSON, CAR]
-        cfg.TEST.EVAL_PERIOD = 100 # No. of iterations after which the Validation Set is evaluated. 
-        os.makedirs(self.cfg.OUTPUT_DIR, exist_ok=True)
-        detectronobject =  cls(dataDir = Path(datadir), metadata =MetadataCatalog.get('task_train'),train_ds = DatasetCatalog.get('task_train'),cfg = cfg)
+        detectronobject =  cls(dataDir = Path(datadir), metadata =MetadataCatalog.get('task_train'),train_ds = DatasetCatalog.get('task_train'))
         
         return detectronobject
     def train(self):
-        
-        trainer = Trainer(cfg) 
+        cfg = get_cfg()
+        cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
+        cfg.DATASETS.TRAIN = ("task_train",)
+        cfg.DATASETS.TEST = ()
+        cfg.DATALOADER.NUM_WORKERS = 2
+        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")  # Let training initialize from model zoo
+        cfg.SOLVER.IMS_PER_BATCH = 2
+        cfg.SOLVER.BASE_LR = 0.000525
+        cfg.SOLVER.MAX_ITER = 5000    
+        cfg.SOLVER.STEPS = []        
+        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128   
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2  
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = .5
+        cfg.TEST.EVAL_PERIOD = len(DatasetCatalog.get('task_train')) // cfg.SOLVER.IMS_PER_BATCH  # Once per epoch
+        os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+        trainer = Trainer(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
         # model = build_model(self.cfg)  # returns a torch.nn.Module
@@ -117,28 +110,38 @@ class DetectronDetector:
         #     checkpointer = DetectionCheckpointer(model, save_dir="output")
         #     checkpointer.save("model_5000")  # save to output/model_5000.pth
         #     torch.save(model.state_dict(), os.path.join('output','checkpoint.pth')) ## just to see if torch.save and checkpointer are generating same value
-        self.evaluate()
+        self.evaluate(cfg)
 
-    def evaluate(self):        
+    def evaluate(self,cfg):        
         ## predictions
-        self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR,"final_model.pth")
-        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
-        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
-        predictor = DefaultPredictor(self.cfg)
+        print(cfg)
+        cfg.MODEL.WEIGHTS = os.path.join('output',"model_final.pth")
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
+        predictor = DefaultPredictor(cfg)
         #Call the COCO Evaluator function and pass the Validation Dataset
         evaluator = COCOEvaluator("task_val", cfg, False, output_dir="/output/")
-        val_loader = build_detection_test_loader(self.cfg, "task_val")
+        val_loader = build_detection_test_loader(cfg, "task_val")
 
         #Use the created predicted model in the previous step
         inference_on_dataset(predictor.model, val_loader, evaluator)
     
     def run_inference(self):
         ## predictions
-        self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR,"final_model.pth")
-        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
-        self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
-        predictor = DefaultPredictor(self.cfg)
+        cfg = get_cfg()
+        cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")) #Get the basic model configuration from the model zoo 
+        cfg.DATASETS.TRAIN = ("task_train",)
+        cfg.DATASETS.TEST = ()
+        # Number of data loading threads
+        cfg.DATALOADER.NUM_WORKERS = 2
+        
+        cfg.MODEL.WEIGHTS = os.path.join('output',"model_final.pth")
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = 2
+        predictor = DefaultPredictor(cfg)
+        dataset_dicts = DatasetCatalog.get('task_val')
         for d in tqdm(dataset_dicts):
+            outs=[]
             im = cv2.imread(d["file_name"])
             outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
             v = Visualizer(im[:, :, ::-1],metadata = MetadataCatalog.get('task_val'))
@@ -148,14 +151,14 @@ class DetectronDetector:
             outs.append(out_pred)
             outs.append(out_target)
             _,axs = plt.subplots(len(outs)//2,2,figsize=(40,45))
-            # for ax, out in zip(axs.reshape(-1), outs):
-            #     ax.imshow(out.get_image())
-            plt.savefig(os.path.join(self.cfg.OUTPUT_DIR,"pred_{}.jpg".format(d['image_id']))) # To save figure
-            del outs,axs,v,visualizer
-            # plt.show() # To show figure
-            # cv2.imwrite(, out.get_image())
+            for ax, out in zip(axs.reshape(-1), outs):
+                ax.imshow(out.get_image())
+            plt.savefig(os.path.join(cfg.OUTPUT_DIR,"pred_{}.jpg".format(d['image_id']))) # To save figure
+            plt.close('all')
+            plt.clf() 
+            del outs,axs,v,visualizer,out_target,out_pred,im
 
-    # Will modify it in future for side to side comparison of train dataset vs predicted on train data
+    # Will modify it in future for side to side comparison of train dataset vs predicted on train data for random n inferences
     # def predict_small_train_sample(self):
     #     self.cfg.MODEL.WEIGHTS = os.path.join(self.cfg.OUTPUT_DIR, "model_final.pth")  # path to the model we just trained
     #     self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5   # set a custom testing threshold
