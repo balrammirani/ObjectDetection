@@ -17,3 +17,5 @@ Following is the summary of this experiment:
 | category   | AP     | category   | AP     |
 |:-----------|:-------|:-----------|:-------|
 | person     | 33.537 | car        | 46.596 |
+
+Google Colab Link : https://colab.research.google.com/drive/17ZGzjC9M3RGWqBINtARSn-0-rKTWZQin
