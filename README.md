@@ -12,10 +12,8 @@ Following is the summary of this experiment:
 
 |   AP   |  AP50  |  AP75  |  APs   |  APm  |  APl  |
 |:------:|:------:|:------:|:------:|:-----:|:-----:|
-| 40.110 | 69.250 | 41.345 | 48.001 |  nan  |  nan  |
+| 40.066 | 69.448 | 40.803 | 48.665 |  nan  |  nan  |
 
 | category   | AP     | category   | AP     |
 |:-----------|:-------|:-----------|:-------|
-| person     | 34.029 | car        | 46.191 |
-
-
+| person     | 33.537 | car        | 46.596 |
