@@ -19,3 +19,7 @@ Following is the summary of this experiment:
 | person     | 33.537 | car        | 46.596 |
 
 Google Colab Link : https://colab.research.google.com/drive/17ZGzjC9M3RGWqBINtARSn-0-rKTWZQin
+
+Sample Inference: (LEFT is Predicted and RIGHT is Actual) 
+
+![1](https://user-images.githubusercontent.com/11017748/152732419-94278158-a0af-4620-a7fb-b068821dadac.png)
